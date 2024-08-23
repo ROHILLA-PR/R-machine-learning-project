@@ -1,0 +1,530 @@
+---
+title: "Group 3 - Introduction To Machine Learning Project(Prediction of Market Value
+  of Soccer Players)"
+author: Advaith Shankar , Destin Blanchard, Pratyush Rohilla , Samuel Song, Vannie
+  Sung
+date: "2024-07-27"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r setup , echo=FALSE,include=FALSE,warning=FALSE,error=FALSE, fig.align='center'}
+library(rpart)
+library(rpart.plot)
+library(dplyr)
+library(MASS)
+library(caret)
+library(randomForest)
+library(gbm)
+library(tidyverse)
+library(reshape2)
+library(class)
+library(car)
+
+set.seed(19)
+
+# Reading the Data set
+df <- read.csv("/Users/advaith/Desktop/MSBA Related coursework/Summer term/Intro to ML/Project/final.csv")
+df
+names(df)
+```
+
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE}
+
+train_ix = createDataPartition(df$market_value, p = 0.8)
+df_train = df[train_ix$Resample1,]
+df_test  = df[-train_ix$Resample1,]
+```
+\newpage
+## Single biggest regression tree
+
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+
+single_big_tree_model <- rpart(
+  market_value ~., 
+  data = df_train, 
+  method = 'anova',
+  control = rpart.control(minsplit = 2, cp = .000001)
+)
+
+# Plot the tree
+plot(single_big_tree_model)
+#rpart.plot(single_big_tree_model, type = 2, extra = 101)
+
+# Size of the big tree
+nbig <- length(unique(single_big_tree_model$where))
+cat('size of big tree: ', nbig, '\n')
+
+# Predict on test data
+predictions <- predict(single_big_tree_model, newdata = df_test)
+
+# Calculate MSE and RMSE
+mse <- mean((df_test$market_value - predictions)^2)
+cat('MSE average prediction off by:' ,mse, '\n')
+rmse <- sqrt(mse)
+cat('RMSE average prediction off by:',rmse,'\n' )
+```
+
+## Pruned tree before CV
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+
+ptree <- prune(single_big_tree_model, cp = 0.09) 
+
+par(font.main = 2)
+rpart.plot(ptree, type = 2 ,extra = 101)
+
+par(font.main = 1)
+
+pfit <- predict(ptree, newdata = df_test)
+
+# Size of the tree
+
+pbig <- length(unique(ptree$where))
+
+cat('Size of the pruned Tree is:' ,pbig, '\n')
+
+# Calculate MSE and RMSE
+
+pmse <- mean((df_test$market_value-pfit)^2)
+cat('MSE average prediction off by:' ,pmse, '\n')
+
+prmse <- sqrt(pmse)
+cat('RMSE average prediction off by:' ,prmse, '\n')
+
+```
+
+## Cross Validation
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+
+par(mfrow = c(1, 1))
+plotcp(single_big_tree_model) #cross validating on cp values
+```
+
+\newpage
+## Pruned tree after CV
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE}
+
+bestcp <- single_big_tree_model$cptable[which.min(single_big_tree_model$cptable[, 'xerror']), 'CP']
+cat('bestcp: ', bestcp, '\n')
+
+#Plotting tree using bestcp
+
+par(mfrow = c(1, 1))
+best.tree <- prune(single_big_tree_model, cp = bestcp)
+
+
+par(font.main = 2)
+rpart.plot(best.tree, 
+           type = 4,         # Use type 4 to draw a split label at each split
+           under = TRUE,     # Display the node numbers under the nodes
+           faclen = 0,       # Do not abbreviate factor levels
+           cex = 0.8,        # Scaling of the text
+           tweak = 0.5,      # Adjust the position of the text
+           box.palette = "Blues",  # Color palette for the nodes
+           shadow.col = "gray", # Add shadow to the nodes
+           )   
+ par(font.main = 1)
+           
+nbest <- length(unique(best.tree$where))
+cat('size of optimal tree: ', nbest, '\n')
+
+predictions_besttree <- predict(best.tree, newdata = df_test)
+besttree_mse <- mean((df_test$market_value - predictions_besttree)^2)
+besttree_rmse <- sqrt(besttree_mse)
+cat('MSE average prediction off by:',besttree_mse,'\n' )
+cat('RMSE average prediction off by:',besttree_rmse,'\n' )
+```
+
+## Bagging 
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+
+n <- nrow(df_train)
+ntreev <- c(100,1000, 2000)
+nset <- length(ntreev)
+fmat <- matrix(0, n, nset)
+for (i in 1:nset) {
+  
+  rffit <- randomForest(market_value ~.,
+                        data = df_train, 
+                        ntree = ntreev[i], 
+                        maxnodes = 300)
+  fmat[, i] <- predict(rffit)
+}
+
+par(mfrow = c(1, 1))
+plot(rffit , main = "RF-Fit Plot", font.main = 1)
+
+# List of columns you want to access
+columns_to_select <- c("age", "market_value", "position_Centre_Back", "position_Centre_Forward", 
+                       "position_Central_Midfield", "position_Left_Back", "position_Defensive_Midfield", 
+                       "position_Right_Back", "position_Attacking_Midfield", "position_Right_Winger", 
+                       "position_Left_Winger", "position_Goalkeeper", "country_from_Italy", 
+                       "country_from_England", "country_from_France", "country_from_Germany", 
+                       "country_from_Spain", "country_from_Portugal", "country_from_Netherlands", 
+                       "country_from_Turkey", "country_from_Brazil", "league_from_Serie_A", 
+                       "league_from_Premier_League", "league_from_Ligue_1", "league_from_Bundesliga", 
+                       "league_from_LaLiga", "league_from_Liga_Portugal", "league_from_Eredivisie", 
+                       "league_from_Süper_Lig", "league_from_Série_A", "club_from_Paris_Saint_Germain", 
+                       "club_from_Atalanta_BC", "club_from_Inter_Milan", "club_from_Juventus_FC", 
+                       "club_from_Sporting_CP", "club_from_AS_Roma", "club_from_FC_Barcelona", 
+                       "club_from_SL_Benfica", "club_from_Chelsea_FC", "club_from_Manchester_City", 
+                       "country_to_Italy", "country_to_England", "country_to_Spain", "country_to_France", 
+                       "country_to_Germany", "country_to_Turkey", "country_to_Netherlands", 
+                       "country_to_Portugal", "country_to_Brazil", "league_to_Serie_A", 
+                       "league_to_Premier_League", "league_to_LaLiga", "league_to_Ligue_1", 
+                       "league_to_Bundesliga", "league_to_Süper_Lig", "league_to_Eredivisie", 
+                       "league_to_Liga_Portugal", "league_to_Série_A", "club_to_Nottingham_Forest", 
+                       "club_to_Olympique_Marseille", "club_to_AC_Monza", "club_to_US_Salernitana_1919", 
+                       "club_to_Trabzonspor", "club_to_US_Cremonese", "club_to_Fulham_FC", 
+                       "club_to_Girona_FC", "club_to_FC_Schalke_04", "club_to_Valencia_CF", "fee_iqr_replaced")
+
+oo <- order(columns_to_select)
+for (i in 1:nset) {
+  
+  plot(df_train$fee_iqr_replaced,
+       df_train$market_value, xlab = "fee_iqr_replaced", ylab = "market_value")
+  lines(df_train$fee_iqr_replaced[oo], fmat[oo, i], col = i, lwd = 3)
+  title(main = paste("bagging ntrees = ", ntreev[i]),font.main = 1) }
+  
+```
+
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+par(font.main = 1) 
+varImpPlot(rffit, main='Variable Importance Plot')
+par(font.main = 2) 
+title(xlab = "Node Purity", ylab = "Variables")
+
+predictions_bagging <- predict(rffit, newdata = df_test)
+# Calculate MSE
+mse_bagging <- mean((df_test$market_value - predictions_bagging)^2)
+rmse_bagging <- sqrt(mse_bagging)
+```
+
+ 
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+plot(predictions_bagging,df_test$market_value,
+     xlab = "Predicted Values", ylab = "Actual Values",main = 'Plot of Predictions VS Out of Sample Actual Values', font.main = 1)
+abline(a = 0, b = 1, col = "red", lty = 2)
+```
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+cat('MSE average prediction off by: ', mse_bagging, '\n')
+cat('RMSE average prediction off by:',rmse_bagging,'\n' )
+
+```
+
+## Random Forest 
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+
+# fit on train+val
+#catrainval <- rbind(catrain, caval)
+finrf <- randomForest(market_value ~., 
+                      data = df_train, mtry = 8, ntree = 2000,maxnodes = 300)
+finrfpred <- predict(finrf, newdata = df_test)
+
+
+# plot variable importance
+
+par(font.main = 1) 
+varImpPlot(finrf,main = 'Variable Importance Plot')
+par(font.main = 2) 
+title(xlab = "Node Purity", ylab = "Variables")
+
+
+#RMSE value for Random forest
+
+random_mse <- mean((df_test$market_value - finrfpred)^2)
+random_rmse <- sqrt(random_mse)
+
+plot(finrfpred,df_test$market_value, xlab= "Predicted Values" , ylab = "Actual Values" , main = 'Predicted Values vs Actual Values', font.main = 1)
+abline(0, 1, col = "red", lwd = 2)
+
+cat('MSE average prediction off by: ', random_mse, '\n')
+cat('RMSE average prediction off by: ', random_rmse, '\n')
+
+```
+
+
+\newpage
+
+## Boosting
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+kcv <- 10
+
+# Create folds for cross-validation
+cv_folds <- createFolds(df_train[["market_value"]], k = kcv)
+
+# Set up train control with cross-validation settings
+fit_control <- trainControl(
+  method = "cv",
+  indexOut = cv_folds,
+  selectionFunction = "oneSE"
+)
+
+#gbmfit <- train(as.formula(paste('market_value', "~ .")), data = final_csv_train, 
+ #               method = "gbm", 
+  #              trControl = fit_control,
+   #             verbose = FALSE)
+
+# Boosting, optimizing over default grid for number of trees and depth
+gbmfit <- train(as.formula(paste('market_value', "~ .")), data = df_train, 
+                method = "gbm",
+                trControl = fit_control,
+                verbose = FALSE)
+
+# Using a custom grid
+gbm_grid <- expand.grid(interaction.depth = c(1, 2, 5, 10), 
+                        n.trees = c(150, 500, 1000), 
+                        shrinkage = c(0.01, 0.1, 0.2),
+                        n.minobsinnode = 10)
+
+gbmfit_2 <- train(as.formula(paste('market_value', "~ .")), data = df_train, 
+                  method = "gbm", 
+                  tuneGrid = gbm_grid,
+                  trControl = fit_control,
+                  verbose = FALSE)
+
+
+# Determine the max RMSE that's within one SE of best
+best_ix <- which.min(gbmfit_2$results$RMSE)
+best <- gbmfit_2$results[best_ix, ]
+onese_max_RMSE <- best$RMSE + best$RMSESD / sqrt(kcv)
+
+# These are the parameter values within one SD
+onese_ixs <- gbmfit_2$results$RMSE < onese_max_RMSE
+```
+
+The best tree value by parameters
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+print(gbmfit_2$results[onese_ixs, ])
+```
+
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+
+gbm_plot_df <- gbmfit_2$results
+gbm_plot_df$n.trees <- factor(gbm_plot_df$n.trees)
+
+ggplot(aes(x = interaction.depth, y = RMSE, color = n.trees), data = gbm_plot_df) +
+  facet_grid(~ shrinkage, labeller = label_both) +
+  geom_point() + 
+  geom_line() + 
+  geom_segment(aes(x = interaction.depth, 
+                   xend = interaction.depth, 
+                   y = RMSE - RMSESD / sqrt(kcv), 
+                   yend = RMSE + RMSESD / sqrt(kcv))) + 
+  geom_hline(yintercept = onese_max_RMSE, linetype = 'dotted') +
+  xlab("Max Tree Depth") + 
+  ylab("RMSE (CV)") + 
+  scale_color_discrete(name = "Num Boosting Iter") + 
+  theme(legend.position = 'bottom') +
+  ggtitle('plot of all fits with the st +/- 1') +
+  theme(plot.title = element_text(face = "plain"))
+
+  
+
+```
+
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+
+gbmfit_3 <- train(as.formula(paste('market_value', "~ .")), data = df_train, 
+                  method = "gbm", 
+                  trControl = trainControl(method = "none"), # No need for CV
+                  tuneGrid = best[, 1:4],
+                  verbose = FALSE)
+
+plot(predict(gbmfit_2), predict(gbmfit_3), main = 'Plotting of fit with lowest estimated error', font.main = 1)
+
+```
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+# Predict on training and test sets
+pred_train <- predict(gbmfit_3, newdata = df_train)
+pred_test <- predict(gbmfit_3, newdata = df_test)
+```
+
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+ggplot(data = df_train, aes(x = pred_train, y = df_train[['market_value']])) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, col = "red") +
+  xlab("Predicted Values") +
+  ylab("Actual Values") +
+  ggtitle('Predicted vs Actual Values for Training Data')+
+  theme(plot.title = element_text(face = "plain"))
+```
+
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+ggplot(data = df_test, aes(x = pred_test, y = df_test[['market_value']])) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, col = "red") +
+  xlab("Predicted Values") +
+  ylab("Actual Values") +
+  ggtitle("Predicted vs Actual Values for Test Data")+
+  theme(plot.title = element_text(face = "plain"))
+```
+
+
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+ggplot(data = df_train, aes(x = df_train[['market_value']], y = pred_train)) +
+  geom_point(color = "blue", alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = "red") +
+  xlab("Actual Market Value") +
+  ylab("Predicted Market Value") +
+  ggtitle("Best Tree Predictions vs Actual Market Value") +
+  theme(plot.title = element_text(face = "plain"))
+
+
+var_importance <- varImp(gbmfit_3, scale = FALSE)
+
+
+var_importance_df <- as.data.frame(var_importance$importance)
+var_importance_df$variable <- rownames(var_importance_df)
+
+# Get top 10 most important variables
+var_importance_10 <- var_importance_df %>% 
+  arrange(desc(Overall))
+
+```
+
+
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+ggplot(var_importance_10, aes(x = reorder(variable, Overall), y = Overall)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  xlab("Top 10 Variables") +
+  ylab("Importance")+
+  ggtitle('Variable Importance Plot')+
+  theme(plot.title = element_text(face = "plain"))
+```
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+
+boosting_mse <- mean((df_test$market_value - pred_test)^2)
+boosting_rmse <- sqrt(boosting_mse)
+
+cat('MSE average prediction off by: ', boosting_mse, '\n')
+cat('RMSE average prediction off by: ', boosting_rmse, '\n')
+```
+
+\newpage
+
+## KNN Algorithm
+
+
+Find outliers in data.
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+ggplot(data = df) + 
+  aes(x = market_value) +
+   xlab("Market Value")+
+   ylab("Count")+
+  geom_histogram(
+    bins = 20, # set number of bins
+    fill = "steelblue", color = "black"
+  ) + 
+  ggtitle("Distribution of Target: market value for outliers") +
+  theme_minimal()
+```
+ 
+It appears that 150 is an outlier. For regression, remove it.
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+
+df_2 <- df %>%filter(df$market_value<=100)
+
+
+# Divide data into training (80%) and testing (20%).
+
+sample <- sample(c(TRUE,FALSE), nrow(df_2), replace=TRUE, prob=c(0.8,0.2)) 
+
+train_data <- df_2[sample,]
+test_data <-df_2[!sample,]
+
+X_all = df_2[, names(df_2) != 'market_value']
+y_all = df_2[, names(df_2) == 'market_value']
+
+# standardize data.
+X_all_scaled = scale(X_all)
+
+# do train/test split. exactly the same as regression data.
+X_train = X_all_scaled[sample,]
+X_test = X_all_scaled[!sample,]
+
+y_train = y_all[sample]
+y_test = y_all[!sample]
+```
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+# K is a paramter for KNN
+
+set.seed(400)
+ctrl <- trainControl(method="cv",number = 5) 
+knnFit <- train(market_value ~ ., 
+                data = train_data, 
+                method = "knn", 
+                trControl = ctrl, 
+                preProcess = c("scale"),
+                tuneLength = 20)
+```
+
+
+Output of kNN fit
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+knnFit
+
+# k   RMSE      Rsquared   MAE     
+# 5  11.02139  0.1213757  7.228084
+# 7  10.47570  0.1779024  6.931594
+# 9  10.52531  0.1668682  7.031662
+# 11  10.51140  0.1661701  7.027533
+# 13  10.40963  0.1820090  7.024860. ==> best K = 13
+# 15  10.48912  0.1696352  7.154726
+# 17  10.51347  0.1667135  7.194237
+# 19  10.52206  0.1680179  7.257687
+# 21  10.61065  0.1557454  7.395629
+# 23  10.64166  0.1553838  7.478454
+# 25  10.69690  0.1492581  7.581914
+# 27  10.68240  0.1538362  7.607690
+# 29  10.70240  0.1537275  7.631921
+# 31  10.69231  0.1560763  7.633879
+# 33  10.71964  0.1538163  7.694659
+# 35  10.73409  0.1524940  7.722722
+# 37  10.74685  0.1528922  7.749292
+# 39  10.75891  0.1530485  7.757703
+# 41  10.76893  0.1534126  7.800876
+# 43  10.79759  0.1501754  7.837957
+```
+
+```{r, echo=FALSE , warning = FALSE, message = FALSE, fig.align='center'}
+plot(knnFit, xlab = "Neighbours", ylab = "RMSE")
+
+K = 21
+
+test_pred <- knn(X_train, X_test, y_train, k= 13)
+test_mse = mean((y_test - as.numeric(test_pred))^2)
+test_rmse = sqrt(test_mse)
+
+cat('MSE average prediction off by: ', test_mse, '\n')
+cat('RMSE average prediction off by: ', test_rmse, '\n') 
+
+
+```
